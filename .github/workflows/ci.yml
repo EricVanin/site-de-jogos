@@ -37,13 +37,18 @@ jobs:
     if: github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'master')
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger deploy webhook
+      - name: Trigger deploy
         env:
-          COOLIFY_DEPLOY_WEBHOOK: ${{ secrets.COOLIFY_DEPLOY_WEBHOOK }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          COOLIFY_RESOURCE_UUID: ${{ secrets.COOLIFY_RESOURCE_UUID }}
+          COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
         run: |
-          if [ -z "$COOLIFY_DEPLOY_WEBHOOK" ]; then
-            echo "COOLIFY_DEPLOY_WEBHOOK is not configured. Skipping deploy."
+          if [ -z "$COOLIFY_API_TOKEN" ] || [ -z "$COOLIFY_RESOURCE_UUID" ] || [ -z "$COOLIFY_URL" ]; then
+            echo "Coolify deployment secrets are not fully configured. Skipping deploy."
             exit 0
           fi
 
-          curl --fail --silent --show-error --request POST "$COOLIFY_DEPLOY_WEBHOOK"
+          curl --fail --silent --show-error \
+            --request GET \
+            --header "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            "$COOLIFY_URL/api/v1/deploy?uuid=$COOLIFY_RESOURCE_UUID&force=true"
