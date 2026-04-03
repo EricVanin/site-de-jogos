@@ -5,6 +5,7 @@ ENV PATH="$PNPM_HOME:$PATH"
 ENV NODE_ENV=production
 ENV PORT=3001
 
+RUN apk add --no-cache curl
 RUN corepack enable
 
 WORKDIR /app
@@ -16,4 +17,4 @@ RUN pnpm build
 
 EXPOSE 3001
 
-CMD ["pnpm", "start"]
+CMD ["node", "apps/server/dist/index.js"]
