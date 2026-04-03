@@ -46,16 +46,18 @@ class MockWebSocket {
 beforeEach(() => {
   MockWebSocket.instances = [];
   vi.stubGlobal("WebSocket", MockWebSocket);
+  let createRoomCalls = 0;
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
 
       if (url.includes("/api/guest/session")) {
+        const guestId = createRoomCalls > 0 ? "guest-test-02" : "guest-test-01";
         return {
           ok: true,
           json: async () => ({
-            guestId: "guest-test-01",
+            guestId,
             locale: "pt-BR",
             createdAt: "2026-04-03T12:00:00.000Z"
           })
@@ -63,8 +65,23 @@ beforeEach(() => {
       }
 
       if (url.includes("/api/rooms") && init?.method === "POST" && !url.includes("/join")) {
+        createRoomCalls += 1;
         const payload = JSON.parse(String(init.body ?? "{}")) as { mode?: string };
         const selectedMode = payload.mode ?? "classic-3x3";
+        const hostGuestId = createRoomCalls > 1 ? "guest-test-02" : "guest-test-01";
+
+        if (createRoomCalls === 1) {
+          return {
+            ok: false,
+            status: 404,
+            json: async () => ({
+              error: {
+                code: "SESSION_NOT_FOUND",
+                message: "Guest session was not found."
+              }
+            })
+          } satisfies Partial<Response>;
+        }
 
         return {
           ok: true,
@@ -73,14 +90,14 @@ beforeEach(() => {
               code: "ABCD",
               state: "waiting",
               mode: selectedMode,
-              hostGuestId: "guest-test-01",
+              hostGuestId,
               playerCount: 1,
               capacity: 2,
               activeMatchId: null,
               expiresAt: "2026-04-03T12:30:00.000Z",
               players: [
                 {
-                  guestId: "guest-test-01",
+                  guestId: hostGuestId,
                   symbol: "X",
                   joinedAt: "2026-04-03T12:00:00.000Z"
                 }
@@ -144,6 +161,24 @@ describe("App", () => {
     });
   });
 
+  it("recreates the guest session and retries when the server forgets the old guestId", async () => {
+    render(
+      <I18nProvider initialLocale="pt-BR">
+        <App />
+      </I18nProvider>
+    );
+
+    const createButton = await screen.findByRole("button", { name: /criar sala/i });
+    fireEvent.click(createButton);
+
+    expect(await screen.findByText(/^ABCD$/i)).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByText("guest-test-02")).toBeInTheDocument();
+      expect(MockWebSocket.instances[0].sent[0]).toContain("\"guestId\":\"guest-test-02\"");
+    });
+  });
+
   it("enables the 5x5 mode and renders a 25-cell board preview", async () => {
     render(
       <I18nProvider initialLocale="pt-BR">
@@ -182,19 +217,19 @@ describe("App", () => {
           code: "ABCD",
           state: "playing",
           mode: "powers",
-          hostGuestId: "guest-test-01",
+          hostGuestId: "guest-test-02",
           playerCount: 2,
           capacity: 2,
           activeMatchId: "match-powers-01",
           expiresAt: "2026-04-03T12:30:00.000Z",
           players: [
             {
-              guestId: "guest-test-01",
+              guestId: "guest-test-02",
               symbol: "X",
               joinedAt: "2026-04-03T12:00:00.000Z"
             },
             {
-              guestId: "guest-test-02",
+              guestId: "guest-opponent-01",
               symbol: "O",
               joinedAt: "2026-04-03T12:00:03.000Z"
             }
@@ -222,12 +257,12 @@ describe("App", () => {
           })),
           players: [
             {
-              guestId: "guest-test-01",
+              guestId: "guest-test-02",
               symbol: "X",
               joinedAt: "2026-04-03T12:00:00.000Z"
             },
             {
-              guestId: "guest-test-02",
+              guestId: "guest-opponent-01",
               symbol: "O",
               joinedAt: "2026-04-03T12:00:03.000Z"
             }
@@ -286,19 +321,19 @@ describe("App", () => {
           code: "ABCD",
           state: "finished",
           mode: "bo5-rotations",
-          hostGuestId: "guest-test-01",
+          hostGuestId: "guest-test-02",
           playerCount: 2,
           capacity: 2,
           activeMatchId: "match-bo5-01",
           expiresAt: "2026-04-03T12:30:00.000Z",
           players: [
             {
-              guestId: "guest-test-01",
+              guestId: "guest-test-02",
               symbol: "X",
               joinedAt: "2026-04-03T12:00:00.000Z"
             },
             {
-              guestId: "guest-test-02",
+              guestId: "guest-opponent-01",
               symbol: "O",
               joinedAt: "2026-04-03T12:00:03.000Z"
             }
@@ -353,12 +388,12 @@ describe("App", () => {
           })),
           players: [
             {
-              guestId: "guest-test-01",
+              guestId: "guest-test-02",
               symbol: "X",
               joinedAt: "2026-04-03T12:00:00.000Z"
             },
             {
-              guestId: "guest-test-02",
+              guestId: "guest-opponent-01",
               symbol: "O",
               joinedAt: "2026-04-03T12:00:03.000Z"
             }
@@ -394,19 +429,19 @@ describe("App", () => {
           code: "ABCD",
           state: "finished",
           mode: "classic-3x3",
-          hostGuestId: "guest-test-01",
+          hostGuestId: "guest-test-02",
           playerCount: 2,
           capacity: 2,
           activeMatchId: "match-ended-01",
           expiresAt: "2026-04-03T12:30:00.000Z",
           players: [
             {
-              guestId: "guest-test-01",
+              guestId: "guest-test-02",
               symbol: "X",
               joinedAt: "2026-04-03T12:00:00.000Z"
             },
             {
-              guestId: "guest-test-02",
+              guestId: "guest-opponent-01",
               symbol: "O",
               joinedAt: "2026-04-03T12:00:03.000Z"
             }
@@ -434,12 +469,12 @@ describe("App", () => {
           })),
           players: [
             {
-              guestId: "guest-test-01",
+              guestId: "guest-test-02",
               symbol: "X",
               joinedAt: "2026-04-03T12:00:00.000Z"
             },
             {
-              guestId: "guest-test-02",
+              guestId: "guest-opponent-01",
               symbol: "O",
               joinedAt: "2026-04-03T12:00:03.000Z"
             }

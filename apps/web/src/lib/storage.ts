@@ -24,3 +24,10 @@ export function saveGuestSession(session: CreateGuestSessionResponse) {
   window.localStorage.setItem(GUEST_SESSION_KEY, JSON.stringify(session));
 }
 
+export function clearGuestSession() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.removeItem(GUEST_SESSION_KEY);
+}

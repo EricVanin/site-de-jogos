@@ -9,13 +9,14 @@ import {
   type ServerEvent
 } from "@site-de-jogos/shared";
 import {
+  ApiRequestError,
   createGuestSession,
   createRoom,
   getRealtimeUrl,
   joinRoom,
   requestRematch
 } from "./lib/api";
-import { loadGuestSession, saveGuestSession } from "./lib/storage";
+import { clearGuestSession, loadGuestSession, saveGuestSession } from "./lib/storage";
 import { useI18n } from "./i18n/useI18n";
 
 const MODE_ORDER: GameMode[] = [
@@ -220,19 +221,52 @@ export function App() {
     });
   }
 
-  async function handleCreateRoom() {
+  async function recreateGuestSession() {
+    const session = await createGuestSession(locale);
+    saveGuestSession(session);
+    setGuestSession(session);
+    return session;
+  }
+
+  async function runWithValidGuestSession<T>(
+    action: (guestId: string) => Promise<T>,
+    fallbackMessage: string
+  ) {
     if (!guestSession) {
-      return;
+      throw new Error(fallbackMessage);
     }
 
+    try {
+      return {
+        result: await action(guestSession.guestId),
+        session: guestSession
+      };
+    } catch (error) {
+      if (!(error instanceof ApiRequestError) || error.code !== "SESSION_NOT_FOUND") {
+        throw error;
+      }
+
+      clearGuestSession();
+      const refreshedSession = await recreateGuestSession();
+      return {
+        result: await action(refreshedSession.guestId),
+        session: refreshedSession
+      };
+    }
+  }
+
+  async function handleCreateRoom() {
     setIsSubmitting(true);
     try {
-      const response = await createRoom(guestSession.guestId, locale, selectedMode);
+      const { result: response, session } = await runWithValidGuestSession(
+        (guestId) => createRoom(guestId, locale, selectedMode),
+        "Unable to create room."
+      );
       setRoom(response.room);
       setMatch(response.activeMatch);
       setSeries(null);
       setFeedback(null);
-      connectToRoom(response.room, guestSession.guestId);
+      connectToRoom(response.room, session.guestId);
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : "Unable to create room.");
     } finally {
@@ -241,18 +275,17 @@ export function App() {
   }
 
   async function handleJoinRoom() {
-    if (!guestSession) {
-      return;
-    }
-
     setIsSubmitting(true);
     try {
-      const response = await joinRoom(joinCode.trim().toUpperCase(), guestSession.guestId);
+      const { result: response, session } = await runWithValidGuestSession(
+        (guestId) => joinRoom(joinCode.trim().toUpperCase(), guestId),
+        "Unable to join room."
+      );
       setRoom(response.room);
       setMatch(response.activeMatch);
       setSeries(null);
       setFeedback(null);
-      connectToRoom(response.room, guestSession.guestId);
+      connectToRoom(response.room, session.guestId);
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : "Unable to join room.");
     } finally {
@@ -261,18 +294,21 @@ export function App() {
   }
 
   function handlePlay(cellIndex: number) {
-    if (!guestSession || !room || !match || socketRef.current?.readyState !== 1) {
+    const activeSocket = socketRef.current;
+    if (!guestSession || !room || !match || !activeSocket || activeSocket.readyState !== 1) {
       return;
     }
 
+    const activeGuestId = guestSession.guestId;
+
     if (selectedPowerCard) {
-      socketRef.current.send(
+      activeSocket.send(
         JSON.stringify({
           type: "power.use",
           payload: {
             roomCode: room.code,
             matchId: match.id,
-            guestId: guestSession.guestId,
+            guestId: activeGuestId,
             cardId: selectedPowerCard.cardId,
             targetCellIndex: cellIndex
           }
@@ -281,13 +317,13 @@ export function App() {
       return;
     }
 
-    socketRef.current.send(
+    activeSocket.send(
       JSON.stringify({
         type: "move.play",
         payload: {
           roomCode: room.code,
           matchId: match.id,
-          guestId: guestSession.guestId,
+          guestId: activeGuestId,
           cellIndex
         }
       })
@@ -295,12 +331,15 @@ export function App() {
   }
 
   async function handleRequestRematch() {
-    if (!guestSession || !match || match.status !== "ended") {
+    if (!match || match.status !== "ended") {
       return;
     }
 
     try {
-      const response = await requestRematch(match.id, guestSession.guestId);
+      const { result: response } = await runWithValidGuestSession(
+        (guestId) => requestRematch(match.id, guestId),
+        "Unable to request rematch."
+      );
       if (response.accepted) {
         setIsAwaitingRematch(false);
         setFeedback(messages.rematchStarting);

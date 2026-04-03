@@ -18,6 +18,18 @@ const API_BASE_URL =
     ? configuredApiBaseUrl.replace(/\/$/, "")
     : window.location.origin;
 
+export class ApiRequestError extends Error {
+  code: string;
+  statusCode: number;
+
+  constructor(message: string, code: string, statusCode: number) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.code = code;
+    this.statusCode = statusCode;
+  }
+}
+
 async function requestJson<T>(
   path: string,
   init: RequestInit,
@@ -34,7 +46,9 @@ async function requestJson<T>(
 
   if (!response.ok) {
     const parsedError = apiErrorSchema.safeParse(json?.error);
-    throw new Error(parsedError.success ? parsedError.data.message : "Request failed.");
+    throw parsedError.success
+      ? new ApiRequestError(parsedError.data.message, parsedError.data.code, response.status)
+      : new ApiRequestError("Request failed.", "REQUEST_FAILED", response.status);
   }
 
   return parser.parse(json);
