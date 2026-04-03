@@ -1,0 +1,17 @@
+{
+  "name": "@site-de-jogos/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --project tsconfig.json && vite build",
+    "lint": "eslint \"src/**/*.{ts,tsx}\"",
+    "test": "vitest run --environment jsdom"
+  },
+  "dependencies": {
+    "@site-de-jogos/shared": "workspace:*",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  }
+}
