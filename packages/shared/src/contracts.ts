@@ -11,6 +11,9 @@ export const gameModes = [
 export const roomStates = ["waiting", "playing", "finished"] as const;
 export const playerSymbols = ["X", "O"] as const;
 export const matchStatuses = ["waiting", "in-progress", "ended"] as const;
+export const seriesStatuses = ["in-progress", "ended"] as const;
+export const powerEffectTypes = ["occupy-empty", "erase-opponent"] as const;
+export const powerTargetRules = ["empty-cell", "opponent-cell"] as const;
 export const clientEventTypes = [
   "room.join",
   "move.play",
@@ -38,6 +41,9 @@ export const gameModeSchema = z.enum(gameModes);
 export const roomStateSchema = z.enum(roomStates);
 export const playerSymbolSchema = z.enum(playerSymbols);
 export const matchStatusSchema = z.enum(matchStatuses);
+export const seriesStatusSchema = z.enum(seriesStatuses);
+export const powerEffectTypeSchema = z.enum(powerEffectTypes);
+export const powerTargetRuleSchema = z.enum(powerTargetRules);
 export const roomCodeSchema = z
   .string()
   .trim()
@@ -71,6 +77,27 @@ export const boardCellSchema = z.object({
   placedAtTurn: turnNumberSchema.nullable()
 });
 
+export const powerCardSchema = z.object({
+  cardId: z.string().trim().min(2).max(32),
+  effectType: powerEffectTypeSchema,
+  targetRule: powerTargetRuleSchema
+});
+
+export const matchPowersSchema = z.object({
+  enabled: z.boolean(),
+  hands: z.object({
+    X: z.array(powerCardSchema).max(3),
+    O: z.array(powerCardSchema).max(3)
+  })
+});
+
+export const seriesRoundResultSchema = z.object({
+  roundNumber: z.number().int().min(1).max(5),
+  mode: gameModeSchema,
+  winner: playerSymbolSchema.nullable(),
+  matchId: matchIdSchema
+});
+
 export const roomSnapshotSchema = z.object({
   code: roomCodeSchema,
   state: roomStateSchema,
@@ -94,7 +121,8 @@ export const matchSnapshotSchema = z.object({
   turnNumber: turnNumberSchema,
   board: z.array(boardCellSchema),
   players: z.array(playerSessionSchema).length(2),
-  winner: playerSymbolSchema.nullable()
+  winner: playerSymbolSchema.nullable(),
+  powers: matchPowersSchema.nullable()
 });
 
 export const createGuestSessionRequestSchema = z.object({
@@ -178,7 +206,10 @@ export const powerAppliedEventPayloadSchema = z.object({
   matchId: matchIdSchema,
   guestId: guestIdSchema,
   cardId: z.string().trim().min(2).max(32),
-  effectType: z.string().trim().min(2).max(32)
+  effectType: powerEffectTypeSchema,
+  targetCellIndex: z.number().int().min(0).max(24).nullable(),
+  nextTurn: playerSymbolSchema,
+  turnNumber: turnNumberSchema
 });
 
 export const matchEndedEventPayloadSchema = z.object({
@@ -191,7 +222,13 @@ export const matchEndedEventPayloadSchema = z.object({
 export const seriesUpdatedEventPayloadSchema = z.object({
   roomCode: roomCodeSchema,
   bestOf: z.literal(5),
-  score: z.record(playerSymbolSchema, z.number().int().min(0))
+  targetWins: z.literal(3),
+  status: seriesStatusSchema,
+  score: z.record(playerSymbolSchema, z.number().int().min(0)),
+  currentRound: z.number().int().min(1).max(5),
+  activeMode: gameModeSchema,
+  winner: playerSymbolSchema.nullable(),
+  history: z.array(seriesRoundResultSchema).max(5)
 });
 
 export const ruleViolationEventPayloadSchema = z.object({
@@ -256,12 +293,18 @@ export type GameMode = (typeof gameModes)[number];
 export type RoomState = (typeof roomStates)[number];
 export type PlayerSymbol = (typeof playerSymbols)[number];
 export type MatchStatus = (typeof matchStatuses)[number];
+export type SeriesStatus = (typeof seriesStatuses)[number];
+export type PowerEffectType = (typeof powerEffectTypes)[number];
+export type PowerTargetRule = (typeof powerTargetRules)[number];
 export type ClientEventType = (typeof clientEventTypes)[number];
 export type ServerEventType = (typeof serverEventTypes)[number];
 export type PublicApiRoute = (typeof publicApiRoutes)[number];
 export type ApiError = z.infer<typeof apiErrorSchema>;
 export type GuestSession = z.infer<typeof guestSessionSchema>;
 export type PlayerSession = z.infer<typeof playerSessionSchema>;
+export type PowerCard = z.infer<typeof powerCardSchema>;
+export type MatchPowers = z.infer<typeof matchPowersSchema>;
+export type SeriesRoundResult = z.infer<typeof seriesRoundResultSchema>;
 export type RoomSnapshot = z.infer<typeof roomSnapshotSchema>;
 export type MatchSnapshot = z.infer<typeof matchSnapshotSchema>;
 export type CreateGuestSessionRequest = z.infer<
@@ -276,5 +319,6 @@ export type JoinRoomRequest = z.infer<typeof joinRoomRequestSchema>;
 export type JoinRoomResponse = z.infer<typeof joinRoomResponseSchema>;
 export type RematchRequest = z.infer<typeof rematchRequestSchema>;
 export type RematchResponse = z.infer<typeof rematchResponseSchema>;
+export type SeriesSnapshot = z.infer<typeof seriesUpdatedEventPayloadSchema>;
 export type ClientEvent = z.infer<typeof clientEventSchema>;
 export type ServerEvent = z.infer<typeof serverEventSchema>;

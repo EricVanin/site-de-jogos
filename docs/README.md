@@ -31,4 +31,4 @@ Este diretorio organiza o planejamento do MVP em arquivos Markdown, separados po
 ## Progresso de implementacao
 
 - Status corrente: ver `docs/02-planning/implementation-status.md`.
-- A fundacao tecnica inicial da Fase 1 agora cobre `T01-T09`.
+- O projeto agora cobre `T01-T13`, com a Fase 2 concluida e o modo `bo5-rotations` ativo.

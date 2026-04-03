@@ -161,6 +161,219 @@ describe("App", () => {
     expect(grid.querySelectorAll("button.board-cell")).toHaveLength(25);
   });
 
+  it("selects a power card and sends power.use through the websocket", async () => {
+    render(
+      <I18nProvider initialLocale="pt-BR">
+        <App />
+      </I18nProvider>
+    );
+
+    const modeButton = await screen.findByRole("button", { name: /poderes/i });
+    fireEvent.click(modeButton);
+    fireEvent.click(screen.getByRole("button", { name: /criar sala/i }));
+
+    await screen.findByText(/^ABCD$/i);
+    const socket = MockWebSocket.instances[0];
+
+    socket.emit("message", {
+      data: JSON.stringify({
+        type: "room.updated",
+        payload: {
+          code: "ABCD",
+          state: "playing",
+          mode: "powers",
+          hostGuestId: "guest-test-01",
+          playerCount: 2,
+          capacity: 2,
+          activeMatchId: "match-powers-01",
+          expiresAt: "2026-04-03T12:30:00.000Z",
+          players: [
+            {
+              guestId: "guest-test-01",
+              symbol: "X",
+              joinedAt: "2026-04-03T12:00:00.000Z"
+            },
+            {
+              guestId: "guest-test-02",
+              symbol: "O",
+              joinedAt: "2026-04-03T12:00:03.000Z"
+            }
+          ]
+        }
+      })
+    } as MessageEvent);
+
+    socket.emit("message", {
+      data: JSON.stringify({
+        type: "match.state",
+        payload: {
+          id: "match-powers-01",
+          roomCode: "ABCD",
+          mode: "powers",
+          status: "in-progress",
+          boardSize: 3,
+          winLength: 3,
+          currentTurn: "X",
+          turnNumber: 0,
+          board: Array.from({ length: 9 }, (_, index) => ({
+            index,
+            occupant: null,
+            placedAtTurn: null
+          })),
+          players: [
+            {
+              guestId: "guest-test-01",
+              symbol: "X",
+              joinedAt: "2026-04-03T12:00:00.000Z"
+            },
+            {
+              guestId: "guest-test-02",
+              symbol: "O",
+              joinedAt: "2026-04-03T12:00:03.000Z"
+            }
+          ],
+          winner: null,
+          powers: {
+            enabled: true,
+            hands: {
+              X: [
+                {
+                  cardId: "x-1",
+                  effectType: "occupy-empty",
+                  targetRule: "empty-cell"
+                }
+              ],
+              O: [
+                {
+                  cardId: "o-1",
+                  effectType: "erase-opponent",
+                  targetRule: "opponent-cell"
+                }
+              ]
+            }
+          }
+        }
+      })
+    } as MessageEvent);
+
+    fireEvent.click(await screen.findByRole("button", { name: /ocupar casa vazia/i }));
+    fireEvent.click(screen.getAllByRole("button", { name: "" })[0]);
+
+    await waitFor(() => {
+      expect(socket.sent.at(-1)).toContain("\"type\":\"power.use\"");
+      expect(socket.sent.at(-1)).toContain("\"cardId\":\"x-1\"");
+    });
+  });
+
+  it("renders the BO5 series panel and next-round action", async () => {
+    render(
+      <I18nProvider initialLocale="pt-BR">
+        <App />
+      </I18nProvider>
+    );
+
+    const modeButton = await screen.findByRole("button", { name: /rounds bo5/i });
+    fireEvent.click(modeButton);
+    fireEvent.click(screen.getByRole("button", { name: /criar sala/i }));
+
+    await screen.findByText(/^ABCD$/i);
+    const socket = MockWebSocket.instances[0];
+
+    socket.emit("message", {
+      data: JSON.stringify({
+        type: "room.updated",
+        payload: {
+          code: "ABCD",
+          state: "finished",
+          mode: "bo5-rotations",
+          hostGuestId: "guest-test-01",
+          playerCount: 2,
+          capacity: 2,
+          activeMatchId: "match-bo5-01",
+          expiresAt: "2026-04-03T12:30:00.000Z",
+          players: [
+            {
+              guestId: "guest-test-01",
+              symbol: "X",
+              joinedAt: "2026-04-03T12:00:00.000Z"
+            },
+            {
+              guestId: "guest-test-02",
+              symbol: "O",
+              joinedAt: "2026-04-03T12:00:03.000Z"
+            }
+          ]
+        }
+      })
+    } as MessageEvent);
+
+    socket.emit("message", {
+      data: JSON.stringify({
+        type: "series.updated",
+        payload: {
+          roomCode: "ABCD",
+          bestOf: 5,
+          targetWins: 3,
+          status: "in-progress",
+          score: {
+            X: 1,
+            O: 0
+          },
+          currentRound: 2,
+          activeMode: "vanishing-tic-tac-toe",
+          winner: null,
+          history: [
+            {
+              roundNumber: 1,
+              mode: "classic-3x3",
+              winner: "X",
+              matchId: "match-bo5-01"
+            }
+          ]
+        }
+      })
+    } as MessageEvent);
+
+    socket.emit("message", {
+      data: JSON.stringify({
+        type: "match.state",
+        payload: {
+          id: "match-bo5-01",
+          roomCode: "ABCD",
+          mode: "classic-3x3",
+          status: "ended",
+          boardSize: 3,
+          winLength: 3,
+          currentTurn: "O",
+          turnNumber: 5,
+          board: Array.from({ length: 9 }, (_, index) => ({
+            index,
+            occupant: index < 3 ? "X" : null,
+            placedAtTurn: index < 3 ? index + 1 : null
+          })),
+          players: [
+            {
+              guestId: "guest-test-01",
+              symbol: "X",
+              joinedAt: "2026-04-03T12:00:00.000Z"
+            },
+            {
+              guestId: "guest-test-02",
+              symbol: "O",
+              joinedAt: "2026-04-03T12:00:03.000Z"
+            }
+          ],
+          winner: "X",
+          powers: null
+        }
+      })
+    } as MessageEvent);
+
+    expect(await screen.findByText(/serie bo5/i)).toBeInTheDocument();
+    expect(screen.getByText(/2\/5/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /iniciar proximo round/i })).toBeInTheDocument();
+  });
+
   it("requests a rematch after the match ends", async () => {
     render(
       <I18nProvider initialLocale="pt-BR">

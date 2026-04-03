@@ -40,7 +40,7 @@ export const CLIENT_EVENT_TYPES: ClientEventType[] = [...clientEventTypes];
 
 export const SERVER_EVENT_TYPES: ServerEventType[] = [...serverEventTypes];
 
-export const CONTRACT_VERSION = "2026.04-t11";
+export const CONTRACT_VERSION = "2026.04-t13";
 
 export function getGameModeLabel(locale: SupportedLocale, mode: GameMode) {
   return GAME_MODE_LABELS[locale][mode];

@@ -17,15 +17,32 @@ import {
   type JoinRoomResponse,
   type MatchSnapshot,
   type PlayerSession,
+  type PlayerSymbol,
   type RematchRequest,
   type RematchResponse,
   type RoomSnapshot,
   type ServerEvent,
+  type SeriesSnapshot,
   type SupportedLocale
 } from "@site-de-jogos/shared";
-import { applyTicTacToeMove, createTicTacToeMatch } from "../game/tic-tac-toe.js";
+import {
+  applyPowerCard,
+  applyTicTacToeMove,
+  createTicTacToeMatch
+} from "../game/tic-tac-toe.js";
 
 const ROOM_TTL_MS = 1000 * 60 * 30;
+const BO5_TARGET_WINS = 3;
+const BO5_BEST_OF = 5;
+const BO5_ROTATION = [
+  "classic-3x3",
+  "vanishing-tic-tac-toe",
+  "powers",
+  "board-5x5-win-4",
+  "classic-3x3"
+] as const;
+
+type SupportedRoundMode = (typeof BO5_ROTATION)[number];
 
 type SessionRecord = CreateGuestSessionResponse;
 
@@ -40,6 +57,8 @@ type RematchRecord = {
   rematchToken: string;
   acceptedGuestIds: Set<string>;
 };
+
+type SeriesRecord = SeriesSnapshot;
 
 class AppError extends Error {
   statusCode: number;
@@ -73,6 +92,7 @@ export class GameStore {
   private rooms = new Map<string, RoomSnapshot>();
   private matches = new Map<string, MatchSnapshot>();
   private rematches = new Map<string, RematchRecord>();
+  private series = new Map<string, SeriesRecord>();
   private roomSockets = new Map<string, Set<WebSocket>>();
   private socketContexts = new WeakMap<WebSocket, SocketContext>();
 
@@ -141,11 +161,17 @@ export class GameStore {
 
     let activeMatch: MatchSnapshot | null = null;
     if (updatedRoom.playerCount === 2) {
-      activeMatch = createTicTacToeMatch(
-        updatedRoom.mode as "classic-3x3" | "vanishing-tic-tac-toe" | "board-5x5-win-4",
-        updatedRoom.code,
-        updatedRoom.players
-      );
+      if (updatedRoom.mode === "bo5-rotations") {
+        const series = this.createSeries(updatedRoom.code);
+        this.series.set(updatedRoom.code, series);
+        activeMatch = this.createSeriesMatch(updatedRoom, series);
+      } else {
+        activeMatch = createTicTacToeMatch(
+          updatedRoom.mode as SupportedRoundMode,
+          updatedRoom.code,
+          updatedRoom.players
+        );
+      }
       this.matches.set(activeMatch.id, activeMatch);
       updatedRoom.state = "playing";
       updatedRoom.activeMatchId = activeMatch.id;
@@ -153,6 +179,12 @@ export class GameStore {
 
     this.rooms.set(updatedRoom.code, updatedRoom);
     this.broadcastRoomState(updatedRoom.code);
+    if (updatedRoom.mode === "bo5-rotations") {
+      const series = this.series.get(updatedRoom.code);
+      if (series) {
+        this.broadcastSeriesState(updatedRoom.code, series);
+      }
+    }
     if (activeMatch) {
       this.broadcastEvent(updatedRoom.code, {
         type: "match.state",
@@ -207,11 +239,24 @@ export class GameStore {
       });
     }
 
-    const nextMatch = createTicTacToeMatch(
-      room.mode as "classic-3x3" | "vanishing-tic-tac-toe" | "board-5x5-win-4",
-      room.code,
-      room.players
-    );
+    let nextMatch: MatchSnapshot;
+    if (room.mode === "bo5-rotations") {
+      const currentSeries = this.series.get(room.code);
+      const nextSeries =
+        !currentSeries || currentSeries.status === "ended"
+          ? this.createSeries(room.code)
+          : currentSeries;
+
+      this.series.set(room.code, nextSeries);
+      nextMatch = this.createSeriesMatch(room, nextSeries);
+      this.broadcastSeriesState(room.code, nextSeries);
+    } else {
+      nextMatch = createTicTacToeMatch(
+        room.mode as SupportedRoundMode,
+        room.code,
+        room.players
+      );
+    }
 
     const restartedRoom: RoomSnapshot = {
       ...room,
@@ -256,12 +301,7 @@ export class GameStore {
         this.handleMovePlay(socket, event);
         return;
       case "power.use":
-        this.sendRuleViolation(socket, {
-          roomCode: event.payload.roomCode,
-          code: "MODE_NOT_READY",
-          message: "Powers are not available before T12.",
-          recoverable: true
-        });
+        this.handlePowerUse(socket, event);
         return;
       case "rematch.request":
         this.handleRematchRequest(socket, event);
@@ -307,6 +347,16 @@ export class GameStore {
       type: "room.updated",
       payload: room
     });
+
+    if (room.mode === "bo5-rotations") {
+      const series = this.series.get(room.code);
+      if (series) {
+        this.sendEvent(socket, {
+          type: "series.updated",
+          payload: series
+        });
+      }
+    }
 
     if (room.activeMatchId) {
       const activeMatch = this.matches.get(room.activeMatchId);
@@ -373,26 +423,7 @@ export class GameStore {
     });
 
     if (result.outcome !== "in-progress") {
-      const finishedRoom: RoomSnapshot = {
-        ...room,
-        state: "finished",
-        expiresAt: futureIso(ROOM_TTL_MS)
-      };
-
-      this.rooms.set(room.code, finishedRoom);
-      this.broadcastEvent(room.code, {
-        type: "match.ended",
-        payload: {
-          roomCode: room.code,
-          matchId: result.match.id,
-          winner: result.match.winner,
-          reason: result.outcome === "win" ? "win" : "draw"
-        }
-      });
-      this.broadcastEvent(room.code, {
-        type: "room.updated",
-        payload: finishedRoom
-      });
+      this.finishRoom(room, result.match, result.outcome);
     }
   }
 
@@ -428,6 +459,70 @@ export class GameStore {
       }
 
       throw error;
+    }
+  }
+
+  private handlePowerUse(
+    socket: WebSocket,
+    event: Extract<ClientEvent, { type: "power.use" }>
+  ) {
+    const context = this.socketContexts.get(socket);
+    if (!context) {
+      throw new AppError(403, "SOCKET_NOT_JOINED", "Join a room before using powers.");
+    }
+
+    if (
+      context.roomCode !== event.payload.roomCode ||
+      context.guestId !== event.payload.guestId
+    ) {
+      throw new AppError(403, "SOCKET_CONTEXT_MISMATCH", "Socket context does not match event.");
+    }
+
+    const room = this.requireRoom(event.payload.roomCode);
+    const match = this.requireMatch(event.payload.matchId);
+
+    if (room.activeMatchId !== match.id) {
+      throw new AppError(409, "MATCH_NOT_ACTIVE", "This match is not active for the room.");
+    }
+
+    const result = applyPowerCard(
+      match,
+      event.payload.guestId,
+      event.payload.cardId,
+      event.payload.targetCellIndex
+    );
+    if (!result.ok) {
+      this.sendRuleViolation(socket, {
+        roomCode: event.payload.roomCode,
+        code: result.code,
+        message: result.message,
+        recoverable: true
+      });
+      return;
+    }
+
+    this.matches.set(result.match.id, result.match);
+    this.broadcastEvent(room.code, {
+      type: "power.applied",
+      payload: {
+        roomCode: room.code,
+        matchId: result.match.id,
+        guestId: result.power.guestId,
+        cardId: result.power.cardId,
+        effectType: result.power.effectType,
+        targetCellIndex: result.power.targetCellIndex,
+        nextTurn: result.power.nextTurn,
+        turnNumber: result.power.turnNumber
+      }
+    });
+
+    this.broadcastEvent(room.code, {
+      type: "match.state",
+      payload: result.match
+    });
+
+    if (result.outcome !== "in-progress") {
+      this.finishRoom(room, result.match, result.outcome);
     }
   }
 
@@ -472,6 +567,13 @@ export class GameStore {
     });
   }
 
+  private broadcastSeriesState(roomCode: string, series: SeriesRecord) {
+    this.broadcastEvent(roomCode, {
+      type: "series.updated",
+      payload: series
+    });
+  }
+
   private createPlayerSession(guestId: string, symbol: PlayerSession["symbol"]): PlayerSession {
     return {
       guestId,
@@ -511,14 +613,44 @@ export class GameStore {
     if (
       mode !== "classic-3x3" &&
       mode !== "vanishing-tic-tac-toe" &&
-      mode !== "board-5x5-win-4"
+      mode !== "powers" &&
+      mode !== "board-5x5-win-4" &&
+      mode !== "bo5-rotations"
     ) {
       throw new AppError(
         409,
         "MODE_NOT_READY",
-        "Only classic 3x3, Sem Velha, and 5x5 win in 4 are available up to T10."
+        "Only classic 3x3, Sem Velha, powers, 5x5 win in 4, and BO5 rotations are available up to T13."
       );
     }
+  }
+
+  private finishRoom(room: RoomSnapshot, match: MatchSnapshot, outcome: "win" | "draw") {
+    const finishedRoom: RoomSnapshot = {
+      ...room,
+      state: "finished",
+      expiresAt: futureIso(ROOM_TTL_MS)
+    };
+
+    this.rooms.set(room.code, finishedRoom);
+    if (room.mode === "bo5-rotations") {
+      const updatedSeries = this.advanceSeriesAfterRound(room.code, match);
+      this.series.set(room.code, updatedSeries);
+      this.broadcastSeriesState(room.code, updatedSeries);
+    }
+    this.broadcastEvent(room.code, {
+      type: "match.ended",
+      payload: {
+        roomCode: room.code,
+        matchId: match.id,
+        winner: match.winner,
+        reason: outcome
+      }
+    });
+    this.broadcastEvent(room.code, {
+      type: "room.updated",
+      payload: finishedRoom
+    });
   }
 
   private generateRoomCode() {
@@ -546,9 +678,84 @@ export class GameStore {
         this.matches.delete(room.activeMatchId);
         this.rematches.delete(room.activeMatchId);
       }
+      this.series.delete(room.code);
       this.rooms.delete(room.code);
       this.roomSockets.delete(room.code);
     }
+  }
+
+  private createSeries(roomCode: string): SeriesRecord {
+    return {
+      roomCode,
+      bestOf: BO5_BEST_OF,
+      targetWins: BO5_TARGET_WINS,
+      status: "in-progress",
+      score: {
+        X: 0,
+        O: 0
+      },
+      currentRound: 1,
+      activeMode: BO5_ROTATION[0],
+      winner: null,
+      history: []
+    };
+  }
+
+  private createSeriesMatch(room: RoomSnapshot, series: SeriesRecord) {
+    return createTicTacToeMatch(series.activeMode as SupportedRoundMode, room.code, room.players);
+  }
+
+  private advanceSeriesAfterRound(roomCode: string, match: MatchSnapshot): SeriesRecord {
+    const currentSeries = this.series.get(roomCode) ?? this.createSeries(roomCode);
+    const nextScore: Record<PlayerSymbol, number> = {
+      X: currentSeries.score.X ?? 0,
+      O: currentSeries.score.O ?? 0
+    };
+
+    if (match.winner) {
+      nextScore[match.winner] += 1;
+    }
+
+    const nextHistory = [
+      ...currentSeries.history,
+      {
+        roundNumber: currentSeries.currentRound,
+        mode: match.mode,
+        winner: match.winner,
+        matchId: match.id
+      }
+    ];
+
+    const reachedTargetWinner =
+      nextScore.X >= BO5_TARGET_WINS ? "X" : nextScore.O >= BO5_TARGET_WINS ? "O" : null;
+
+    if (reachedTargetWinner || nextHistory.length >= BO5_BEST_OF) {
+      const fallbackWinner =
+        nextScore.X === nextScore.O ? null : nextScore.X > nextScore.O ? "X" : "O";
+
+      return {
+        ...currentSeries,
+        status: "ended",
+        score: nextScore,
+        currentRound: nextHistory.length,
+        activeMode: match.mode,
+        winner: reachedTargetWinner ?? fallbackWinner,
+        history: nextHistory
+      };
+    }
+
+    const nextMode =
+      BO5_ROTATION[nextHistory.length] ?? BO5_ROTATION[BO5_ROTATION.length - 1];
+
+    return {
+      ...currentSeries,
+      status: "in-progress",
+      score: nextScore,
+      currentRound: nextHistory.length + 1,
+      activeMode: nextMode,
+      winner: null,
+      history: nextHistory
+    };
   }
 }
 

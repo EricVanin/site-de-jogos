@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MatchSnapshot, PlayerSession } from "@site-de-jogos/shared";
-import { applyTicTacToeMove, createTicTacToeMatch } from "./tic-tac-toe.js";
+import { applyPowerCard, applyTicTacToeMove, createTicTacToeMatch } from "./tic-tac-toe.js";
 
 const players: PlayerSession[] = [
   { guestId: "guest-host-01", symbol: "X", joinedAt: "2026-04-03T12:00:00.000Z" },
@@ -154,5 +154,52 @@ describe("tic-tac-toe engines", () => {
     expect(lastResult.match.board[0].occupant).toBeNull();
     expect(lastResult.match.board[3].occupant).toBe("O");
     expect(lastResult.match.board[2].occupant).toBe("X");
+  });
+
+  it("creates an initial 3-card hand for each player in powers mode", () => {
+    const match = createTicTacToeMatch("powers", "ABCD", players);
+
+    expect(match.powers?.enabled).toBe(true);
+    expect(match.powers?.hands.X).toHaveLength(3);
+    expect(match.powers?.hands.O).toHaveLength(3);
+  });
+
+  it("applies a valid occupy-empty power and consumes the card", () => {
+    const match = createTicTacToeMatch("powers", "ABCD", players);
+    const occupyCard = match.powers?.hands.X.find((card) => card.effectType === "occupy-empty");
+
+    expect(occupyCard).toBeDefined();
+    if (!occupyCard) {
+      throw new Error("Expected an occupy-empty card in the initial hand");
+    }
+
+    const result = applyPowerCard(match, "guest-host-01", occupyCard.cardId, 4);
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(`Expected a valid power use, got ${result.code}`);
+    }
+
+    expect(result.power.effectType).toBe("occupy-empty");
+    expect(result.match.board[4].occupant).toBe("X");
+    expect(result.match.currentTurn).toBe("O");
+    expect(result.match.powers?.hands.X).toHaveLength(2);
+  });
+
+  it("rejects a power card used against an invalid target", () => {
+    const match = createTicTacToeMatch("powers", "ABCD", players);
+    const eraseCard = match.powers?.hands.X.find((card) => card.effectType === "erase-opponent");
+
+    expect(eraseCard).toBeDefined();
+    if (!eraseCard) {
+      throw new Error("Expected an erase-opponent card in the initial hand");
+    }
+
+    const result = applyPowerCard(match, "guest-host-01", eraseCard.cardId, 0);
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error("Expected invalid power rejection");
+    }
+
+    expect(result.code).toBe("POWER_TARGET_INVALID");
   });
 });

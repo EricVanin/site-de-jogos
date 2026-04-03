@@ -77,6 +77,8 @@ h1 {
 .locale-button,
 .primary-button,
 .mode-card,
+.power-card,
+.text-button,
 .board-cell,
 .field input {
   font: inherit;
@@ -85,6 +87,8 @@ h1 {
 .locale-button,
 .primary-button,
 .mode-card,
+.power-card,
+.text-button,
 .board-cell {
   transition:
     transform 120ms ease,
@@ -238,6 +242,43 @@ h1 {
   font-size: 1rem;
 }
 
+.series-panel {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.series-panel h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.series-scoreboard {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.series-history {
+  display: grid;
+  gap: 10px;
+}
+
+.history-row {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.history-row span {
+  color: rgba(248, 245, 240, 0.72);
+  font-size: 0.9rem;
+}
+
 .feedback {
   margin: 12px 0 0;
   padding: 12px 14px;
@@ -294,6 +335,70 @@ h1 {
 .board-cell:disabled {
   cursor: default;
   opacity: 0.88;
+}
+
+.power-panel {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.power-panel-header {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.power-panel h3 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+}
+
+.power-list {
+  display: grid;
+  gap: 10px;
+}
+
+.power-card {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid rgba(138, 220, 255, 0.22);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(109, 192, 255, 0.18), rgba(109, 192, 255, 0.05)),
+    rgba(255, 255, 255, 0.03);
+  color: #eff8ff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.power-card span {
+  color: rgba(239, 248, 255, 0.72);
+  font-size: 0.88rem;
+}
+
+.power-card-active {
+  border-color: rgba(255, 207, 139, 0.82);
+  background:
+    linear-gradient(180deg, rgba(255, 190, 120, 0.24), rgba(255, 190, 120, 0.08)),
+    rgba(255, 255, 255, 0.04);
+}
+
+.power-card:disabled,
+.text-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.text-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #9dd8ff;
+  cursor: pointer;
 }
 
 .result-line {

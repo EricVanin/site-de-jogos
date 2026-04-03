@@ -3,7 +3,9 @@ import {
   type CreateGuestSessionResponse,
   type GameMode,
   type MatchSnapshot,
+  type PowerCard,
   type RoomSnapshot,
+  type SeriesSnapshot,
   type ServerEvent
 } from "@site-de-jogos/shared";
 import {
@@ -37,12 +39,14 @@ export function App() {
   );
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
   const [match, setMatch] = useState<MatchSnapshot | null>(null);
+  const [series, setSeries] = useState<SeriesSnapshot | null>(null);
   const [selectedMode, setSelectedMode] = useState<GameMode>("classic-3x3");
   const [joinCode, setJoinCode] = useState("");
   const [socketStatus, setSocketStatus] = useState<SocketStatus>("idle");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAwaitingRematch, setIsAwaitingRematch] = useState(false);
+  const [selectedPowerCardId, setSelectedPowerCardId] = useState<string | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -88,6 +92,24 @@ export function App() {
     return match?.players.find((player) => player.guestId === guestSession?.guestId) ?? null;
   }, [guestSession?.guestId, match]);
 
+  const myPowerCards = useMemo(() => {
+    if (!match?.powers?.enabled || !myPlayer) {
+      return [] as PowerCard[];
+    }
+
+    return match.powers.hands[myPlayer.symbol];
+  }, [match?.powers, myPlayer]);
+
+  const selectedPowerCard = useMemo(() => {
+    return myPowerCards.find((card) => card.cardId === selectedPowerCardId) ?? null;
+  }, [myPowerCards, selectedPowerCardId]);
+
+  useEffect(() => {
+    if (selectedPowerCardId && !myPowerCards.some((card) => card.cardId === selectedPowerCardId)) {
+      setSelectedPowerCardId(null);
+    }
+  }, [myPowerCards, selectedPowerCardId]);
+
   const boardHint = useMemo(() => {
     if (!room || room.playerCount < 2) {
       return messages.boardHintWaiting;
@@ -101,12 +123,16 @@ export function App() {
       return messages.boardHintEnded;
     }
 
+    if (selectedPowerCard && myPlayer?.symbol === match.currentTurn) {
+      return messages.powersSelectedHint;
+    }
+
     if (myPlayer?.symbol === match.currentTurn) {
       return messages.boardHintYourTurn;
     }
 
     return messages.boardHintOpponentTurn;
-  }, [match, messages, myPlayer?.symbol, room]);
+  }, [match, messages, myPlayer?.symbol, room, selectedPowerCard]);
 
   const socketStatusLabel = {
     idle: messages.socketDisconnected,
@@ -116,11 +142,18 @@ export function App() {
   }[socketStatus];
 
   const previewBoardSize = match?.boardSize ?? resolveBoardSize(room?.mode ?? selectedMode);
+  const rematchActionLabel =
+    room?.mode === "bo5-rotations"
+      ? series?.status === "ended"
+        ? messages.restartSeriesButton
+        : messages.nextRoundButton
+      : messages.rematchButton;
   const renderedBoard =
     match?.board ??
     Array.from({ length: previewBoardSize * previewBoardSize }, (_, index) => ({
       index,
-      occupant: null
+      occupant: null,
+      placedAtTurn: null
     }));
 
   function connectToRoom(nextRoom: RoomSnapshot, nextGuestId: string) {
@@ -152,14 +185,24 @@ export function App() {
       switch (message.type) {
         case "room.updated":
           setRoom(message.payload);
+          if (message.payload.mode !== "bo5-rotations") {
+            setSeries(null);
+          }
           return;
         case "match.state":
           setIsAwaitingRematch(false);
           setFeedback(null);
           setMatch(message.payload);
           return;
+        case "series.updated":
+          setSeries(message.payload);
+          return;
         case "move.applied":
           setFeedback(null);
+          return;
+        case "power.applied":
+          setFeedback(null);
+          setSelectedPowerCardId(null);
           return;
         case "match.ended":
           setFeedback(
@@ -187,6 +230,7 @@ export function App() {
       const response = await createRoom(guestSession.guestId, locale, selectedMode);
       setRoom(response.room);
       setMatch(response.activeMatch);
+      setSeries(null);
       setFeedback(null);
       connectToRoom(response.room, guestSession.guestId);
     } catch (error) {
@@ -206,6 +250,7 @@ export function App() {
       const response = await joinRoom(joinCode.trim().toUpperCase(), guestSession.guestId);
       setRoom(response.room);
       setMatch(response.activeMatch);
+      setSeries(null);
       setFeedback(null);
       connectToRoom(response.room, guestSession.guestId);
     } catch (error) {
@@ -217,6 +262,22 @@ export function App() {
 
   function handlePlay(cellIndex: number) {
     if (!guestSession || !room || !match || socketRef.current?.readyState !== 1) {
+      return;
+    }
+
+    if (selectedPowerCard) {
+      socketRef.current.send(
+        JSON.stringify({
+          type: "power.use",
+          payload: {
+            roomCode: room.code,
+            matchId: match.id,
+            guestId: guestSession.guestId,
+            cardId: selectedPowerCard.cardId,
+            targetCellIndex: cellIndex
+          }
+        })
+      );
       return;
     }
 
@@ -254,6 +315,22 @@ export function App() {
     }
   }
 
+  function canUseSelectedPower(cell: MatchSnapshot["board"][number]) {
+    if (!match || match.status !== "in-progress" || !selectedPowerCard || !myPlayer) {
+      return false;
+    }
+
+    if (myPlayer.symbol !== match.currentTurn) {
+      return false;
+    }
+
+    if (selectedPowerCard.effectType === "occupy-empty") {
+      return cell.occupant === null;
+    }
+
+    return cell.occupant !== null && cell.occupant !== myPlayer.symbol;
+  }
+
   return (
     <main className="shell">
       <section className="hero">
@@ -289,7 +366,9 @@ export function App() {
               const available =
                 mode === "classic-3x3" ||
                 mode === "vanishing-tic-tac-toe" ||
-                mode === "board-5x5-win-4";
+                mode === "powers" ||
+                mode === "board-5x5-win-4" ||
+                mode === "bo5-rotations";
               return (
                 <button
                   type="button"
@@ -378,6 +457,54 @@ export function App() {
             <p className="microcopy">{guestSession ? messages.sessionReady : messages.sessionLoading}</p>
           )}
           <p className="microcopy">{room?.playerCount === 2 ? boardHint : messages.waitingBody}</p>
+          {series ? (
+            <section className="series-panel" aria-label={messages.seriesTitle}>
+              <h3>{messages.seriesTitle}</h3>
+              <p className="microcopy">{messages.seriesBody}</p>
+              <div className="status-list">
+                <div>
+                  <span className="status-label">{messages.seriesRoundLabel}</span>
+                  <strong>
+                    {series.currentRound}/{series.bestOf}
+                  </strong>
+                </div>
+                <div>
+                  <span className="status-label">{messages.seriesTargetLabel}</span>
+                  <strong>{series.targetWins}</strong>
+                </div>
+              </div>
+              <div className="series-scoreboard">
+                <span className="pill">
+                  {messages.seriesScoreLabels.X}: {series.score.X}
+                </span>
+                <span className="pill">
+                  {messages.seriesScoreLabels.O}: {series.score.O}
+                </span>
+              </div>
+              <p className="microcopy">
+                {series.status === "ended"
+                  ? `${messages.seriesEndedLabel}: ${series.winner ?? messages.drawLabel}`
+                  : `${messages.modeLabels[series.activeMode]} - ${messages.seriesRoundLabel} ${series.currentRound}`}
+              </p>
+              {series.history.length > 0 ? (
+                <div className="series-history">
+                  <span className="status-label">{messages.seriesHistoryTitle}</span>
+                  {series.history.map((round) => (
+                    <div className="history-row" key={round.matchId}>
+                      <strong>
+                        #{round.roundNumber} {messages.modeLabels[round.mode]}
+                      </strong>
+                      <span>
+                        {round.winner
+                          ? `${messages.winnerLabel}: ${round.winner}`
+                          : messages.drawLabel}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
           {feedback ? (
             <p className="feedback">
               {messages.errorPrefix}: {feedback}
@@ -426,8 +553,8 @@ export function App() {
                 disabled={
                   !match ||
                   match.status !== "in-progress" ||
-                  cell.occupant !== null ||
-                  myPlayer?.symbol !== match.currentTurn
+                  myPlayer?.symbol !== match.currentTurn ||
+                  (selectedPowerCard ? !canUseSelectedPower(cell) : cell.occupant !== null)
                 }
               >
                 {cell.occupant ?? ""}
@@ -436,6 +563,50 @@ export function App() {
           </div>
 
           <p className="microcopy">{boardHint}</p>
+          {match?.powers?.enabled ? (
+            <section className="power-panel" aria-label={messages.powersTitle}>
+              <div className="power-panel-header">
+                <div>
+                  <h3>{messages.powersTitle}</h3>
+                  <p className="microcopy">{messages.powersBody}</p>
+                </div>
+                {selectedPowerCard ? (
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => setSelectedPowerCardId(null)}
+                  >
+                    {messages.powersClearSelection}
+                  </button>
+                ) : null}
+              </div>
+
+              {myPowerCards.length > 0 ? (
+                <div className="power-list">
+                  {myPowerCards.map((card) => (
+                    <button
+                      type="button"
+                      key={card.cardId}
+                      className={`power-card${
+                        selectedPowerCardId === card.cardId ? " power-card-active" : ""
+                      }`}
+                      onClick={() =>
+                        setSelectedPowerCardId((current) =>
+                          current === card.cardId ? null : card.cardId
+                        )
+                      }
+                      disabled={!match || match.status !== "in-progress" || myPlayer?.symbol !== match.currentTurn}
+                    >
+                      <strong>{messages.powerEffectLabels[card.effectType]}</strong>
+                      <span>{messages.powerTargetRuleLabels[card.targetRule]}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="microcopy">{messages.powersHandEmpty}</p>
+              )}
+            </section>
+          ) : null}
           {match?.status === "ended" ? (
             <>
               <p className="result-line">
@@ -447,7 +618,7 @@ export function App() {
                 onClick={handleRequestRematch}
                 disabled={!guestSession || isAwaitingRematch}
               >
-                {isAwaitingRematch ? messages.rematchWaiting : messages.rematchButton}
+                {isAwaitingRematch ? messages.rematchWaiting : rematchActionLabel}
               </button>
             </>
           ) : null}

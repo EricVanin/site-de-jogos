@@ -66,10 +66,12 @@
 ### T12 - Sistema de cartas/poderes (deck)
 - Deps: T07.
 - DoD: compra/uso/efeitos sincronizados e validados server-side.
+- Status: concluida.
 
 ### T13 - Modo Rounds BO5
 - Deps: T08, T09, T10, T12.
 - DoD: serie encerra ao 3o ponto com historico consistente.
+- Status: concluida.
 
 ### T14 - Anti-cheat basico
 - Deps: T07.

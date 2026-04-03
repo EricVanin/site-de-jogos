@@ -25,5 +25,5 @@ Base inicial do MVP multiplayer mobile-first descrito em `docs/`.
 
 ## Status
 
-- Fase atual: `T09` concluida.
+- Fase atual: `T13` concluida.
 - Acompanhe o progresso em `docs/02-planning/implementation-status.md`.

@@ -94,3 +94,23 @@
   - suporte ao evento `rematch.request` no WebSocket usando a mesma regra server-side;
   - nova partida criada automaticamente na mesma sala assim que ambos confirmam;
   - interface com CTA de revanche e estado de espera ate o adversario aceitar.
+
+## T12 - Sistema de cartas/poderes (deck)
+
+- Status: concluido.
+- Entregas:
+  - modo `powers` habilitado no lobby, backend de salas e metadados da API;
+  - snapshot de partida com maos iniciais de 3 cartas por jogador, sincronizadas pelo servidor;
+  - suporte server-side ao evento `power.use` com validacoes de carta, turno e alvo;
+  - efeitos MVP `occupy-empty` e `erase-opponent` com broadcast de `power.applied` e `match.state`;
+  - interface com selecao de carta, alvo no tabuleiro e feedback integrado ao fluxo realtime.
+
+## T13 - Modo Rounds BO5
+
+- Status: concluido.
+- Entregas:
+  - modo `bo5-rotations` habilitado no lobby e no backend de salas;
+  - serie server-side com rotacao predefinida de modos, placar acumulado e historico de rounds;
+  - evento `series.updated` enriquecido com round atual, modo ativo, vencedor e historico;
+  - fluxo de avancar round reaproveitando a confirmacao dupla de `rematch`, sem perder o estado da serie;
+  - interface com painel de serie BO5, score por simbolo e CTA para proximo round ou reiniciar a serie.

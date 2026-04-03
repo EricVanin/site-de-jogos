@@ -1,14 +1,16 @@
 import { randomUUID } from "node:crypto";
 import type {
   GameMode,
+  MatchPowers,
   MatchSnapshot,
   PlayerSession,
-  PlayerSymbol
+  PlayerSymbol,
+  PowerCard
 } from "@site-de-jogos/shared";
 
 type SupportedMatchMode = Extract<
   GameMode,
-  "classic-3x3" | "vanishing-tic-tac-toe" | "board-5x5-win-4"
+  "classic-3x3" | "vanishing-tic-tac-toe" | "powers" | "board-5x5-win-4"
 >;
 
 type MoveResult =
@@ -21,6 +23,26 @@ type MoveResult =
         nextTurn: PlayerSymbol;
         turnNumber: number;
         removedCellIndex: number | null;
+      };
+      outcome: "in-progress" | "win" | "draw";
+    }
+  | {
+      ok: false;
+      code: string;
+      message: string;
+    };
+
+type PowerResult =
+  | {
+      ok: true;
+      match: MatchSnapshot;
+      power: {
+        guestId: string;
+        cardId: string;
+        effectType: PowerCard["effectType"];
+        targetCellIndex: number;
+        nextTurn: PlayerSymbol;
+        turnNumber: number;
       };
       outcome: "in-progress" | "win" | "draw";
     }
@@ -52,11 +74,26 @@ const MATCH_MODE_CONFIG: Record<
     boardSize: 3,
     winLength: 3
   },
+  powers: {
+    boardSize: 3,
+    winLength: 3
+  },
   "board-5x5-win-4": {
     boardSize: 5,
     winLength: 4
   }
 };
+
+const POWER_CATALOG = [
+  {
+    effectType: "occupy-empty",
+    targetRule: "empty-cell"
+  },
+  {
+    effectType: "erase-opponent",
+    targetRule: "opponent-cell"
+  }
+] satisfies Array<Pick<PowerCard, "effectType" | "targetRule">>;
 
 function createBoard(size: number) {
   return Array.from({ length: size * size }, (_, index) => ({
@@ -68,6 +105,30 @@ function createBoard(size: number) {
 
 function otherSymbol(symbol: PlayerSymbol): PlayerSymbol {
   return symbol === "X" ? "O" : "X";
+}
+
+function createInitialPowers(roomCode: string): MatchPowers {
+  const roomSeed = roomCode.split("").reduce((total, character) => total + character.charCodeAt(0), 0);
+
+  const createHand = (symbol: PlayerSymbol) =>
+    Array.from({ length: 3 }, (_, index) => {
+      const catalogIndex = (roomSeed + index + (symbol === "X" ? 0 : 1)) % POWER_CATALOG.length;
+      const template = POWER_CATALOG[catalogIndex];
+
+      return {
+        cardId: `${symbol.toLowerCase()}-${index + 1}`,
+        effectType: template.effectType,
+        targetRule: template.targetRule
+      } satisfies PowerCard;
+    });
+
+  return {
+    enabled: true,
+    hands: {
+      X: createHand("X"),
+      O: createHand("O")
+    }
+  };
 }
 
 function resolvePlayerSymbol(players: PlayerSession[], guestId: string) {
@@ -133,7 +194,8 @@ function createMatchBase(mode: SupportedMatchMode, roomCode: string, players: Pl
     players: players
       .slice()
       .sort((left, right) => Number(right.symbol === "X") - Number(left.symbol === "X")),
-    winner: null
+    winner: null,
+    powers: mode === "powers" ? createInitialPowers(roomCode) : null
   } satisfies MatchSnapshot;
 }
 
@@ -190,12 +252,13 @@ export function applyTicTacToeMove(
   if (
     currentMatch.mode !== "classic-3x3" &&
     currentMatch.mode !== "vanishing-tic-tac-toe" &&
+    currentMatch.mode !== "powers" &&
     currentMatch.mode !== "board-5x5-win-4"
   ) {
     return {
       ok: false,
       code: "MODE_NOT_READY",
-      message: "Only classic 3x3, Sem Velha, and 5x5 win in 4 are supported in the current phase."
+      message: "Only classic 3x3, Sem Velha, powers, and 5x5 win in 4 are supported in the current phase."
     };
   }
 
@@ -324,6 +387,191 @@ export function applyTicTacToeMove(
       nextTurn,
       turnNumber: nextTurnNumber,
       removedCellIndex
+    },
+    outcome: "in-progress"
+  };
+}
+
+export function applyPowerCard(
+  currentMatch: MatchSnapshot,
+  guestId: string,
+  cardId: string,
+  targetCellIndex?: number
+): PowerResult {
+  if (currentMatch.mode !== "powers" || !currentMatch.powers?.enabled) {
+    return {
+      ok: false,
+      code: "MODE_NOT_READY",
+      message: "Powers can only be used in powers matches."
+    };
+  }
+
+  if (currentMatch.status !== "in-progress") {
+    return {
+      ok: false,
+      code: "MATCH_ENDED",
+      message: "The match has already ended."
+    };
+  }
+
+  const playerSymbol = resolvePlayerSymbol(currentMatch.players, guestId);
+  if (!playerSymbol) {
+    return {
+      ok: false,
+      code: "PLAYER_NOT_IN_MATCH",
+      message: "The guest is not part of this match."
+    };
+  }
+
+  if (playerSymbol !== currentMatch.currentTurn) {
+    return {
+      ok: false,
+      code: "OUT_OF_TURN",
+      message: "It is not this player's turn."
+    };
+  }
+
+  const hand = currentMatch.powers.hands[playerSymbol];
+  const card = hand.find((entry) => entry.cardId === cardId);
+  if (!card) {
+    return {
+      ok: false,
+      code: "CARD_NOT_AVAILABLE",
+      message: "The selected power card is not available in the player's hand."
+    };
+  }
+
+  if (targetCellIndex === undefined) {
+    return {
+      ok: false,
+      code: "POWER_TARGET_REQUIRED",
+      message: "This power requires a board target."
+    };
+  }
+
+  const targetCell = currentMatch.board[targetCellIndex];
+  if (!targetCell) {
+    return {
+      ok: false,
+      code: "CELL_OUT_OF_RANGE",
+      message: "The selected cell does not exist on the board."
+    };
+  }
+
+  const opponentSymbol = otherSymbol(playerSymbol);
+  let nextBoard = currentMatch.board;
+
+  if (card.effectType === "occupy-empty") {
+    if (targetCell.occupant !== null) {
+      return {
+        ok: false,
+        code: "POWER_TARGET_INVALID",
+        message: "This power can only target an empty cell."
+      };
+    }
+
+    nextBoard = currentMatch.board.map((cell) =>
+      cell.index === targetCellIndex
+        ? {
+            ...cell,
+            occupant: playerSymbol,
+            placedAtTurn: currentMatch.turnNumber + 1
+          }
+        : cell
+    );
+  } else {
+    if (targetCell.occupant !== opponentSymbol) {
+      return {
+        ok: false,
+        code: "POWER_TARGET_INVALID",
+        message: "This power can only target an opponent piece."
+      };
+    }
+
+    nextBoard = currentMatch.board.map((cell) =>
+      cell.index === targetCellIndex
+        ? {
+            ...cell,
+            occupant: null,
+            placedAtTurn: null
+          }
+        : cell
+    );
+  }
+
+  const nextTurn = otherSymbol(playerSymbol);
+  const nextTurnNumber = currentMatch.turnNumber + 1;
+  const updatedMatch: MatchSnapshot = {
+    ...currentMatch,
+    board: nextBoard,
+    currentTurn: nextTurn,
+    turnNumber: nextTurnNumber,
+    powers: {
+      ...currentMatch.powers,
+      hands: {
+        ...currentMatch.powers.hands,
+        [playerSymbol]: hand.filter((entry) => entry.cardId !== card.cardId)
+      }
+    }
+  };
+
+  if (
+    hasWinningLine(
+      updatedMatch.board,
+      updatedMatch.boardSize,
+      updatedMatch.winLength,
+      playerSymbol
+    )
+  ) {
+    return {
+      ok: true,
+      match: {
+        ...updatedMatch,
+        status: "ended",
+        winner: playerSymbol
+      },
+      power: {
+        guestId,
+        cardId: card.cardId,
+        effectType: card.effectType,
+        targetCellIndex,
+        nextTurn,
+        turnNumber: nextTurnNumber
+      },
+      outcome: "win"
+    };
+  }
+
+  if (isBoardFull(updatedMatch)) {
+    return {
+      ok: true,
+      match: {
+        ...updatedMatch,
+        status: "ended",
+        winner: null
+      },
+      power: {
+        guestId,
+        cardId: card.cardId,
+        effectType: card.effectType,
+        targetCellIndex,
+        nextTurn,
+        turnNumber: nextTurnNumber
+      },
+      outcome: "draw"
+    };
+  }
+
+  return {
+    ok: true,
+    match: updatedMatch,
+    power: {
+      guestId,
+      cardId: card.cardId,
+      effectType: card.effectType,
+      targetCellIndex,
+      nextTurn,
+      turnNumber: nextTurnNumber
     },
     outcome: "in-progress"
   };

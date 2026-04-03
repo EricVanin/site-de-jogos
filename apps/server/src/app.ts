@@ -75,7 +75,7 @@ export function createApp() {
   app.get("/api/meta", async () => {
     return {
       name: "site-de-jogos-server",
-      phase: "T11",
+      phase: "T13",
       status: HEALTH_STATUS.ready,
       contractVersion: CONTRACT_VERSION,
       httpRoutes: PUBLIC_API_ROUTES,

@@ -6,7 +6,7 @@
 - Guest flow, lobby e backend de salas.
 - WebSocket com ciclo completo de partida.
 - Motores de regra iniciais e sistema de revanche.
-- Status atual: `T01-T09` concluidas; `T10-T11` pendentes.
+- Status atual: concluida (`T01-T11`).
 
 **Marco:** partida 1v1 completa por sala, estavel, com revanche.
 
@@ -14,6 +14,7 @@
 
 - Sistema de poderes por deck.
 - Serie BO5 com rotacao de modos e placar.
+- Status atual: concluida (`T12-T13`).
 
 **Marco:** modos avancados jogaveis sem quebra de sincronizacao.
 

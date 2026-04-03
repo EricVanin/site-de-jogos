@@ -105,4 +105,51 @@ describe("shared contracts", () => {
 
     expect(result.room.code).toBe("ABCD");
   });
+
+  it("parses a valid power.applied server event", () => {
+    const result = serverEventSchema.parse({
+      type: "power.applied",
+      payload: {
+        roomCode: "ABCD",
+        matchId: "match-1234",
+        guestId: "guest-1234",
+        cardId: "x-1",
+        effectType: "occupy-empty",
+        targetCellIndex: 4,
+        nextTurn: "O",
+        turnNumber: 1
+      }
+    });
+
+    expect(result.type).toBe("power.applied");
+  });
+
+  it("parses a valid series.updated event", () => {
+    const result = serverEventSchema.parse({
+      type: "series.updated",
+      payload: {
+        roomCode: "ABCD",
+        bestOf: 5,
+        targetWins: 3,
+        status: "in-progress",
+        score: {
+          X: 2,
+          O: 1
+        },
+        currentRound: 4,
+        activeMode: "powers",
+        winner: null,
+        history: [
+          {
+            roundNumber: 1,
+            mode: "classic-3x3",
+            winner: "X",
+            matchId: "match-round-1"
+          }
+        ]
+      }
+    });
+
+    expect(result.type).toBe("series.updated");
+  });
 });

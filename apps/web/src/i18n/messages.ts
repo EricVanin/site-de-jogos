@@ -2,6 +2,9 @@ import {
   GAME_MODE_LABELS,
   LOCALE_LABELS,
   type GameMode,
+  type PowerEffectType,
+  type PowerTargetRule,
+  type PlayerSymbol,
   type SupportedLocale
 } from "@site-de-jogos/shared";
 
@@ -50,6 +53,22 @@ export type MessageCatalog = {
   rematchButton: string;
   rematchWaiting: string;
   rematchStarting: string;
+  nextRoundButton: string;
+  restartSeriesButton: string;
+  seriesTitle: string;
+  seriesBody: string;
+  seriesRoundLabel: string;
+  seriesTargetLabel: string;
+  seriesHistoryTitle: string;
+  seriesEndedLabel: string;
+  seriesScoreLabels: Record<PlayerSymbol, string>;
+  powersTitle: string;
+  powersBody: string;
+  powersHandEmpty: string;
+  powersSelectedHint: string;
+  powersClearSelection: string;
+  powerEffectLabels: Record<PowerEffectType, string>;
+  powerTargetRuleLabels: Record<PowerTargetRule, string>;
   localeLabels: Record<SupportedLocale, string>;
   modeLabels: Record<GameMode, string>;
   roomStateLabels: {
@@ -65,10 +84,10 @@ type StringKeys<T> = {
 
 export const messages = {
   "pt-BR": {
-    phaseEyebrow: "Fase 1 em andamento",
+    phaseEyebrow: "Fase 3 em andamento",
     title: "Lobby Multiplayer do Jogo da Velha",
     lead:
-      "Sessao guest, sala por codigo, lobby mobile-first e modos 3x3 e 5x5 agora funcionam em tempo real na base do MVP.",
+      "Sessao guest, sala por codigo, lobby mobile-first e modos 3x3, 5x5, Poderes e BO5 agora funcionam em tempo real na base do MVP.",
     languageSwitcherLabel: "Idioma",
     sessionLoading: "Criando sua sessao guest...",
     sessionReady: "Sessao pronta para entrar em uma sala.",
@@ -111,6 +130,31 @@ export const messages = {
     rematchButton: "Revanche em 1 clique",
     rematchWaiting: "Pedido enviado. Aguardando oponente confirmar.",
     rematchStarting: "Revanche confirmada. Reiniciando partida...",
+    nextRoundButton: "Iniciar proximo round",
+    restartSeriesButton: "Jogar nova serie BO5",
+    seriesTitle: "Serie BO5",
+    seriesBody: "O servidor alterna os modos e encerra a serie assim que alguem chega a 3 pontos.",
+    seriesRoundLabel: "Round atual",
+    seriesTargetLabel: "Meta",
+    seriesHistoryTitle: "Historico de rounds",
+    seriesEndedLabel: "Serie encerrada",
+    seriesScoreLabels: {
+      X: "Jogador X",
+      O: "Jogador O"
+    },
+    powersTitle: "Cartas de poder",
+    powersBody: "Cada partida de Poderes comeca com 3 cartas por jogador, validadas no servidor.",
+    powersHandEmpty: "Sua mao acabou. Termine a partida com as jogadas normais.",
+    powersSelectedHint: "Carta selecionada. Toque em uma casa valida do tabuleiro para usar.",
+    powersClearSelection: "Cancelar selecao",
+    powerEffectLabels: {
+      "occupy-empty": "Ocupar casa vazia",
+      "erase-opponent": "Apagar peca adversaria"
+    },
+    powerTargetRuleLabels: {
+      "empty-cell": "Alvo: casa vazia",
+      "opponent-cell": "Alvo: peca do adversario"
+    },
     localeLabels: LOCALE_LABELS,
     modeLabels: GAME_MODE_LABELS["pt-BR"],
     roomStateLabels: {
@@ -120,10 +164,10 @@ export const messages = {
     }
   },
   en: {
-    phaseEyebrow: "Phase 1 in progress",
+    phaseEyebrow: "Phase 3 in progress",
     title: "Multiplayer Tic-Tac-Toe Lobby",
     lead:
-      "Guest session, room code flow, mobile-first lobby, and the released 3x3 and 5x5 modes now run in real time on the MVP foundation.",
+      "Guest session, room code flow, mobile-first lobby, and the released 3x3, 5x5, powers, and BO5 modes now run in real time on the MVP foundation.",
     languageSwitcherLabel: "Language",
     sessionLoading: "Creating your guest session...",
     sessionReady: "Session ready to join a room.",
@@ -165,6 +209,31 @@ export const messages = {
     rematchButton: "One-click rematch",
     rematchWaiting: "Request sent. Waiting for the opponent to confirm.",
     rematchStarting: "Rematch confirmed. Restarting match...",
+    nextRoundButton: "Start next round",
+    restartSeriesButton: "Play a new BO5 series",
+    seriesTitle: "BO5 series",
+    seriesBody: "The server rotates modes and ends the series as soon as someone reaches 3 points.",
+    seriesRoundLabel: "Current round",
+    seriesTargetLabel: "Target",
+    seriesHistoryTitle: "Round history",
+    seriesEndedLabel: "Series finished",
+    seriesScoreLabels: {
+      X: "Player X",
+      O: "Player O"
+    },
+    powersTitle: "Power cards",
+    powersBody: "Each powers match starts with 3 server-validated cards per player.",
+    powersHandEmpty: "Your hand is empty. Finish the match with regular moves.",
+    powersSelectedHint: "Card selected. Tap a valid board cell to use it.",
+    powersClearSelection: "Clear selection",
+    powerEffectLabels: {
+      "occupy-empty": "Claim empty cell",
+      "erase-opponent": "Erase opponent piece"
+    },
+    powerTargetRuleLabels: {
+      "empty-cell": "Target: empty cell",
+      "opponent-cell": "Target: opponent piece"
+    },
     localeLabels: LOCALE_LABELS,
     modeLabels: GAME_MODE_LABELS.en,
     roomStateLabels: {
